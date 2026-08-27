@@ -1,0 +1,68 @@
+/*
+  Module 04: UDS / Chan doan (Diagnostics) trong CAPL
+  Muc tieu: Lam quen khai niem diagRequest, diagResponse, diagGetParameter
+            va y tuong ve ISO-TP (van chuyen message chan doan qua CAN).
+  Luu y: Cac ham lien quan den diag can co Diagnostic Description (CDD/ODX)
+         duoc nap vao CANoe project thi moi bien dich/chay that duoc.
+         File nay tap trung vao CU PHAP de luyen tap, khong can license that.
+*/
+
+variables
+{
+  // diagRequest / diagResponse thuong duoc khai bao gan voi 1 dich vu (service)
+  // cu the trong Diagnostic Description, vi du: DiagRequestSetSession
+  // diagRequest DiagServiceName.ServiceRequest gReq;
+}
+
+/*
+  ISO-TP (ISO 15765-2) la giao thuc van chuyen cho phep gui du lieu chan doan
+  dai hon 8 byte (gioi han cua 1 CAN frame thuong) bang cach chia thanh nhieu frame:
+    - Single Frame (SF)   : du lieu <= 7 byte, gui trong 1 frame
+    - First Frame (FF)    : frame dau tien cua du lieu dai
+    - Consecutive Frame (CF): cac frame tiep theo chua phan con lai
+    - Flow Control (FC)   : frame dieu khien luong tu phia nhan
+  CAPL/CANoe tu dong xu ly viec ghep/tach ISO-TP nay khi dung diagRequest/diagResponse.
+*/
+
+on preStart
+{
+  write("=== Module UDS Diagnostics san sang ===");
+}
+
+/*
+  Vi du cau truc goi 1 UDS request (dang minh hoa cu phap):
+
+  on key 'd'
+  {
+    // TODO 1: Tao va gui 1 diagRequest (thay ten service thuc te trong CDD cua ban)
+    // diagRequest DiagServiceName.ServiceRequest req;
+    // diagSendRequest(req);
+  }
+
+  on diagRequest DiagServiceName.ServiceRequest
+  {
+    write("Da gui UDS request: %s", this);
+  }
+
+  on diagResponse DiagServiceName.ServiceRequest
+  {
+    // diagGetParameter lay gia tri 1 tham so cu the tu response tra ve
+    // TODO 2: Dung diagGetParameter(this, "TenThamSo", dwordBuffer) de doc gia tri
+    write("Da nhan UDS response cho request tren");
+  }
+
+  on diagResponse *
+  {
+    // Bat TAT CA response chan doan, khong phan biet service nao
+    write("Nhan duoc 1 diagnostic response bat ky");
+  }
+*/
+
+// TODO 3: Neu ban co Diagnostic Description (CDD/ODX) trong project CANoe that,
+//         hay bo comment khoi cac khoi vi du ben tren va thay ten service dung
+//         de thu bien dich & chay thu trong CANoe.
+
+on stopMeasurement
+{
+  write("=== Ket thuc phien luyen tap UDS Diagnostics ===");
+}

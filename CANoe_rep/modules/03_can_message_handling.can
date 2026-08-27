@@ -1,0 +1,56 @@
+/*
+  Module 03: Xu ly CAN Frame trong CAPL
+  Muc tieu: Lam quen voi output(), this.id, this.byte(x), this.dlc, this.dir
+*/
+
+variables
+{
+  message * gTxMsg;  // Bien message generic dung de gui (Tx) frame tuy chinh
+}
+
+on start
+{
+  write("=== San sang lang nghe CAN message tren bus ===");
+}
+
+/*
+  on message *:
+  Dau '*' nghia la lang nghe TAT CA cac message tren kenh CAN.
+  Co the thay '*' bang ten message cu the (vi du: on message EngineData)
+  de chi bat 1 loai message duy nhat.
+*/
+on message *
+{
+  // this.id : ID (dang so) cua message CAN vua nhan duoc
+  write("Nhan duoc message ID = 0x%X", this.id);
+
+  // this.dlc : Data Length Code - so byte du lieu trong frame (0..8)
+  write("DLC = %d", this.dlc);
+
+  // this.dir : Huong cua message - Rx (nhan) hay Tx (gui)
+  // TODO 1: In ra this.dir bang write("Direction = %d", this.dir);
+
+  // this.byte(x) : Truy cap byte thu x trong payload (x = 0..7)
+  // TODO 2: In ra gia tri byte dau tien: write("Byte 0 = 0x%X", this.byte(0));
+
+  // TODO 3: Duyet qua tat ca cac byte trong payload theo this.dlc va in ra tung byte
+  // for (int i = 0; i < this.dlc; i++)
+  // {
+  //   write("Byte %d = 0x%X", i, this.byte(i));
+  // }
+}
+
+on key 't'
+{
+  // ===== Vi du gui (transmit) mot CAN frame tuy chinh bang output() =====
+  gTxMsg.id  = 0x123;   // Gan CAN ID cho frame
+  gTxMsg.dlc = 8;        // Dat so byte du lieu
+
+  // TODO 4: Gan gia tri cho tung byte payload truoc khi gui
+  //         gTxMsg.byte(0) = 0xAA;
+  //         gTxMsg.byte(1) = 0xBB;
+
+  // output(<ten_bien_message>) : Gui frame ra bus CAN
+  output(gTxMsg);
+  write("Da gui gTxMsg voi ID = 0x%X", gTxMsg.id);
+}

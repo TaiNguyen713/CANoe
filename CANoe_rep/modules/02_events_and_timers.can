@@ -1,0 +1,59 @@
+/*
+  Module 02: Su kien va Timer trong CAPL
+  Muc tieu: Phan biet timer chay 1 lan (single-shot) va timer lap lai (recurring),
+            hoc cach dung setTimer / cancelTimer / on timer.
+*/
+
+variables
+{
+  msTimer gOneShotTimer;   // Timer chi chay 1 lan
+  msTimer gRepeatTimer;    // Timer se duoc lap lai thu cong trong on timer
+  int gRepeatCount;        // Dem so lan gRepeatTimer da chay
+}
+
+on start
+{
+  write("=== Bat dau vi du ve Timer ===");
+
+  // ===== Vi du Timer chay 1 lan (single-shot) =====
+  // setTimer(<ten_timer>, <so_ms>) : lap lich cho timer chay sau X mili giay
+  setTimer(gOneShotTimer, 1000); // Sau 1000ms se vao on timer gOneShotTimer
+
+  // ===== Vi du Timer lap lai (recurring) =====
+  // TODO 1: Bat dau gRepeatTimer chay lan dau sau 200 ms
+  // setTimer(gRepeatTimer, 200);
+}
+
+on timer gOneShotTimer
+{
+  write("gOneShotTimer: Da het han - Timer nay chi chay 1 LAN duy nhat");
+  // Vi khong goi lai setTimer() nen timer nay se khong tu lap lai
+}
+
+on timer gRepeatTimer
+{
+  gRepeatCount++;
+  write("gRepeatTimer: Lan chay thu %d", gRepeatCount);
+
+  // TODO 2: Neu gRepeatCount < 5, goi lai setTimer(gRepeatTimer, 200) de tao vong lap
+  //         Neu gRepeatCount >= 5, khong goi lai (timer se dung)
+  // if (gRepeatCount < 5)
+  // {
+  //   setTimer(gRepeatTimer, 200);
+  // }
+}
+
+on key 'c'
+{
+  // cancelTimer(<ten_timer>) : Huy mot timer dang cho, ke ca truoc khi no het han
+  // TODO 3: Huy gRepeatTimer khi nguoi dung nhan phim 'c'
+  // cancelTimer(gRepeatTimer);
+  write("Da huy gRepeatTimer (neu dang chay)");
+}
+
+on stopMeasurement
+{
+  // Thuc hanh tot: luon huy cac timer dang chay khi measurement dung
+  cancelTimer(gOneShotTimer);
+  cancelTimer(gRepeatTimer);
+}

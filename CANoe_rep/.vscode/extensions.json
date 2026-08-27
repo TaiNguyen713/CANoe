@@ -1,0 +1,11 @@
+{
+    // Danh sách extension đề xuất cho việc học và thực hành CAPL
+    "recommendations": [
+        // Hỗ trợ cú pháp CAPL (nếu có trên máy - do Vector cung cấp cùng CANoe)
+        "capl-language-support",
+        // Fallback: hỗ trợ cú pháp C/C++ vì CAPL có cú pháp gần giống C
+        "ms-vscode.cpptools",
+        // Hỗ trợ highlight và snippet C/C++ nhẹ hơn (tuỳ chọn)
+        "jeff-hykin.better-cpp-syntax"
+    ]
+}

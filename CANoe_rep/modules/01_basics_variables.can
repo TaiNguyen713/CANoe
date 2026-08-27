@@ -1,0 +1,55 @@
+/*
+  Module 01: Kieu du lieu co ban & bien trong CAPL
+  Muc tieu: Lam quen voi cac kieu du lieu, mang, msTimer va khai bao message.
+*/
+
+variables
+{
+  // ===== Cac kieu du lieu so nguyen co ban =====
+  byte  gByteVal;       // 8-bit khong dau, gia tri 0..255
+  word  gWordVal;       // 16-bit khong dau, gia tri 0..65535
+  dword gDwordVal;      // 32-bit khong dau
+  int   gIntVal;        // 16-bit co dau (tuong duong short)
+  long  gLongVal;       // 32-bit co dau
+  double gDoubleVal;    // So thuc dau phay dong, do chinh xac cao
+
+  // ===== Mang (array) =====
+  byte gDataArray[8];   // Mang 8 phan tu, thuong dung cho payload CAN (max DLC = 8)
+  int  gValueList[5] = {1, 2, 3, 4, 5}; // Mang co gia tri khoi tao san
+
+  // ===== msTimer: timer tinh theo mili giay =====
+  msTimer gDemoTimer;
+
+  // ===== Khai bao message: lien ket voi 1 CAN message trong database (DBC) =====
+  // Cu phap: message <TenMessageTrongDBC> <bienMessage>;
+  // message EngineData gEngineMsg;   // TODO: Bo comment va thay bang ten message thuc te trong DBC cua ban
+}
+
+on preStart
+{
+  // TODO 1: Gan gByteVal = 255 va gWordVal = 65535, sau do write() ra 2 gia tri nay
+  // write("gByteVal = %d, gWordVal = %d", gByteVal, gWordVal);
+
+  // TODO 2: Gan gDoubleVal = 3.14159 va in ra bang write() voi dinh dang %f
+  // write("gDoubleVal = %f", gDoubleVal);
+}
+
+on start
+{
+  // TODO 3: Duyet qua gValueList bang vong lap for, in tung phan tu ra Write Window
+  // for (int i = 0; i < elcount(gValueList); i++)
+  // {
+  //   write("gValueList[%d] = %d", i, gValueList[i]);
+  // }
+
+  // TODO 4: Gan gia tri cho tung byte trong gDataArray (vi du: gDataArray[0] = 0x11;)
+  //         Day la cach mo phong payload cua 1 CAN frame truoc khi gui di
+
+  // TODO 5: Bat dau gDemoTimer chay mot lan sau 500 ms
+  // setTimer(gDemoTimer, 500);
+}
+
+on timer gDemoTimer
+{
+  write("gDemoTimer da het han sau 500ms");
+}

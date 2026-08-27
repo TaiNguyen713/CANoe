@@ -1,0 +1,52 @@
+/*
+  Module 05: System Variables (sysvar) trong CAPL
+  Muc tieu: Lam quen cu phap on sysvar, sysGetVariableInt, va tham chieu @sysvar::...
+  Luu y: sysvar phai duoc dinh nghia truoc trong System Variables cua CANoe project
+         (vi du: namespace "Demo" voi bien "Counter", "Status"...)
+*/
+
+variables
+{
+  int gLocalCopy; // Bien local dung de luu ban sao gia tri doc tu sysvar
+}
+
+on preStart
+{
+  write("=== Module System Variables san sang ===");
+}
+
+/*
+  on sysvar <namespace>::<tenBien>:
+  Duoc goi moi khi gia tri cua sysvar tuong ung THAY DOI.
+  Tuong tu on message nhung danh cho System Variable thay vi CAN message.
+*/
+on sysvar Demo::Counter
+{
+  // TODO 1: Doc gia tri moi cua sysvar bang @sysvar::Demo::Counter
+  // gLocalCopy = @sysvar::Demo::Counter;
+  // write("sysvar Demo::Counter da thay doi, gia tri moi = %d", gLocalCopy);
+}
+
+on start
+{
+  // ===== Cach 1: Truy cap truc tiep bang cu phap @sysvar::<namespace>::<ten> =====
+  // TODO 2: Gan gia tri 10 cho sysvar Demo::Counter
+  // @sysvar::Demo::Counter = 10;
+
+  // ===== Cach 2: Dung ham sysGetVariableInt / sysSetVariableInt =====
+  // sysGetVariableInt(<duong_dan_sysvar>) : Doc gia tri kieu int cua 1 sysvar
+  // TODO 3: Doc gia tri hien tai va luu vao gLocalCopy
+  // gLocalCopy = sysGetVariableInt(sysvar::Demo::Counter);
+  // write("Gia tri sysvar hien tai (qua ham) = %d", gLocalCopy);
+
+  // sysSetVariableInt(<duong_dan_sysvar>, <gia_tri>) : Ghi gia tri moi cho sysvar
+  // TODO 4: Dat gia tri sysvar Demo::Status = 1 (vi du: 1 = "Active")
+  // sysSetVariableInt(sysvar::Demo::Status, 1);
+}
+
+on key 's'
+{
+  // TODO 5: Moi lan nhan phim 's', tang sysvar Demo::Counter len 1 don vi
+  // @sysvar::Demo::Counter = @sysvar::Demo::Counter + 1;
+  write("Da tang sysvar Demo::Counter (neu duoc cau hinh)");
+}

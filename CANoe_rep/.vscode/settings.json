@@ -1,0 +1,18 @@
+{
+    // Ánh xạ file .can và .cin sang cú pháp C để có highlight cơ bản
+    "files.associations": {
+        "*.can": "c",
+        "*.cin": "c"
+    },
+
+    // Thụt lề 2 space cho toàn bộ workspace
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+
+    // Đảm bảo mọi file được lưu bằng UTF-8 để hiển thị đúng comment tiếng Việt
+    "files.encoding": "utf8",
+
+    // Hiển thị khoảng trắng/tab để dễ theo dõi thụt lề khi luyện gõ CAPL
+    "editor.renderWhitespace": "boundary"
+}

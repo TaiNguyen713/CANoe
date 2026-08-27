@@ -1,0 +1,68 @@
+/*@@var:*/
+variables
+{
+  // Khai báo biến toàn cục dùng chung cho toàn bộ CAPL node ở đây
+  int gCounter;
+  msTimer gExampleTimer;
+}
+
+/*
+  on preStart:
+  Được gọi TRƯỚC KHI đo (measurement) bắt đầu, trước cả on start.
+  Dùng để khởi tạo cấu hình ban đầu, chưa có bus traffic.
+*/
+on preStart
+{
+  write("preStart: khoi tao cau hinh ban dau");
+}
+
+/*
+  on start:
+  Được gọi khi measurement bắt đầu chạy (bus đã active).
+  Đây là nơi thường dùng để setTimer, gán giá trị ban đầu cho biến.
+*/
+on start
+{
+  write("start: measurement da bat dau");
+  // TODO: Khởi động gExampleTimer chạy sau 1000 ms bằng setTimer()
+}
+
+/*
+  on timer <ten_timer>:
+  Được gọi khi timer tương ứng hết hạn (xem setTimer trong 02_events_and_timers.can).
+*/
+on timer gExampleTimer
+{
+  gCounter++;
+  write("Timer da het han, gCounter = %d", gCounter);
+  // TODO: Gọi lại setTimer(gExampleTimer, 1000) nếu muốn timer lặp lại
+}
+
+/*
+  on message <ten_hoac_id>:
+  Được gọi mỗi khi node nhận được message CAN tương ứng trên bus.
+  "this" đại diện cho message vừa nhận được.
+*/
+on message *
+{
+  // TODO: In ra ID va DLC cua message vua nhan duoc bang this.id, this.dlc
+}
+
+/*
+  on key <phim>:
+  Cho phép gán một phím tắt để giả lập hành động, thường dùng khi test thủ công.
+*/
+on key 'a'
+{
+  write("Phim 'a' vua duoc nhan trong Write Window");
+}
+
+/*
+  on stopMeasurement:
+  Được gọi khi measurement dừng lại. Dùng để dọn dẹp, huỷ timer, log ket qua.
+*/
+on stopMeasurement
+{
+  write("stopMeasurement: measurement da dung");
+  // TODO: Huỷ gExampleTimer bằng cancelTimer() nếu đang chạy
+}
