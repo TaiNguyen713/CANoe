@@ -1,0 +1,20 @@
+version = 1
+revision = 3
+requires-python = ">=3.11"
+
+[[package]]
+name = "can"
+version = "0.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/97/d249778a096e611bc06c19d7378342941eaabe619ce943369b4a7f2e7c8c/can-0.0.0.tar.gz", hash = "sha256:50ea6910329c14a997726d1f25d31e8102e10ccf99e4e32a4da4c52579524235", size = 1046, upload-time = "2020-06-12T12:33:48.648Z" }
+
+[[package]]
+name = "interview"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "can" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "can", specifier = ">=0.0.0" }]
