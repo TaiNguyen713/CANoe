@@ -1,0 +1,45 @@
+// Ví dụ §5.1 của SPEC_SIMLANG_V2.md, chép nguyên văn — ba ca khó: 7F xx 78
+// (responsePending), trạng thái sau erase DTC, live data theo thời gian.
+
+variables {
+    int  dtcCleared = 0;
+    int  rpm = 800;
+    msTimer rpmTimer;
+}
+
+on start {
+    loadStatic("2008_Audi_A6.sim");
+    setTimer(rpmTimer, 100);
+}
+
+// responsePending
+on request 0x7E0 service 0x31 {
+    output(0x7F, 0x31, 0x78);
+    delay(2000);
+    output(0x7F, 0x31, 0x78);
+    delay(2000);
+    output(0x71, 0x01, 0x02, 0x03);
+}
+
+// trạng thái sau erase
+on request 0x7DF service 0x04 {
+    dtcCleared = 1;
+    output(0x44);
+}
+
+on request 0x7DF service 0x03 {
+    if (dtcCleared)
+        output(0x43, 0x00);
+    else
+        output(0x43, 0x02, 0x01, 0x33, 0x01, 0x71);
+}
+
+// live data theo thời gian
+on timer rpmTimer {
+    rpm = 800 + 1100 * sin(elapsed() / 3.0);
+    setTimer(rpmTimer, 100);
+}
+
+on request 0x7DF service 0x01 pid 0x0C {
+    output(0x41, 0x0C, (rpm * 4) >> 8, (rpm * 4) & 0xFF);
+}

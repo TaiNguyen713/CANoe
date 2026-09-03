@@ -1,0 +1,15 @@
+# CANoe Fake — Phase 1
+# Chỉ cần Qt cho giao diện; lớp ngôn ngữ CAPL không phụ thuộc thư viện ngoài.
+PySide6>=6.6
+
+# Dành cho phát triển / chạy test
+pytest>=8.0
+
+# simlang — DSL kiểu CAPL transpile ra Python + điều khiển phần cứng OBD trực tiếp
+lark>=1.1
+pythonnet>=3.0      # chỉ cần khi thực sự chạy `simlang run` với board thật (Windows/.NET);
+                     # KHÔNG cần cho build/check/import hay chạy test — FakeTransport
+                     # không import module này (xem runtime/transport.py, `import clr` nằm
+                     # trong __init__ của RealTransport, không phải ở top-level module)
+pytest-asyncio>=0.23
+typer>=0.12

@@ -1,0 +1,137 @@
+// Grammar cho ngôn ngữ .can (kiểu CAPL, xem SPEC_SIMLANG_V2.md §5).
+// LALR + contextual lexer — nhanh, cho line/column sạch qua Token.
+
+start: (variables_block | event_handler)*
+
+// ---- khối variables (§5.2) — MỌI biến là module-level, không có khai báo
+// biến cục bộ trong handler (đúng theo "Phạm vi: module-level" của spec) ----
+variables_block: "variables" "{" var_decl* "}"
+
+// §5.2 liệt kê kiểu là "byte[]"/"char[]" (ngoặc đi liền sau tên kiểu, kiểu
+// C: `byte[] buf;`), không phải `byte buf[];` — array_suffix đặt TRƯỚC tên
+// biến để khớp đúng cách viết trong spec.
+var_decl: TYPE array_suffix? NAME ("=" expr)? ";"
+array_suffix: "[" DECIMAL? "]"
+
+TYPE.2: "int" | "long" | "float" | "double" | "char" | "byte" | "msTimer"
+
+// ---- event handler (§5.3) ----
+event_handler: on_start | on_stop | on_request | on_timer | on_message
+
+on_start:   "on" "start" block
+on_stop:    "on" "stop" block
+on_timer:   "on" "timer" NAME block
+on_message: "on" "message" hexint block
+
+// một rule duy nhất, pid_clause/data_clause độc lập-tuỳ-chọn (có thể cùng
+// xuất hiện) — KHÔNG tách thành 3 rule riêng, xem plan §10 mục 1.
+on_request: "on" "request" hexint "service" hexint pid_clause? data_clause? block
+pid_clause:  "pid" hexint
+data_clause: "data" byte_or_wild+
+
+byte_or_wild: hexint -> byte_concrete
+            | WILDCARD -> byte_wild
+WILDCARD.2: "xx" | "XX"
+
+// ---- câu lệnh (§5.5) ----
+block: "{" stmt* "}"
+
+?stmt: if_stmt
+     | while_stmt
+     | for_stmt
+     | switch_stmt
+     | expr_stmt
+     | block
+
+if_stmt: "if" "(" expr ")" stmt ("else" stmt)?
+while_stmt: "while" "(" expr ")" stmt
+// [expr] (không phải expr?) CỐ Ý — với maybe_placeholders=True, Lark chèn
+// None đúng vị trí khi vắng mặt, tránh lệch index giữa init/cond/step khi
+// chỉ một trong ba có mặt (vd `for(; i<10; i++)` thiếu init).
+for_stmt: "for" "(" [expr] ";" [expr] ";" [expr] ")" stmt
+
+switch_stmt: "switch" "(" expr ")" "{" case_clause* "}"
+case_clause: "case" expr ":" stmt* -> case_value
+           | "default" ":" stmt*   -> case_default
+
+expr_stmt: expr ";"
+
+// ---- biểu thức: precedence climbing qua các tầng rule ----
+?expr: assign
+
+// LƯU Ý QUAN TRỌNG về priority: khi nhiều toán tử dùng chung TIỀN TỐ nhưng
+// nằm ở các terminal Lark KHÁC NHAU (vd REL_OP chứa ">" còn SHIFT_OP chứa
+// ">>"), Lark KHÔNG tự động thử khớp dài nhất giữa các terminal khác nhau
+// — hành vi "ưu tiên literal dài hơn" chỉ đáng tin cậy cho terminal ẩn danh
+// đơn (anonymous string) CÙNG LOẠI, không áp dụng đáng tin cậy khi so sánh
+// giữa các terminal có tên gộp nhiều alternative khác nhau (đã xác nhận
+// bằng thực nghiệm: ">>" bị tách nhầm thành 2 token ">" nếu không set
+// priority). Vì vậy MỌI toán tử ghép ký tự đều được đặt priority tường
+// minh, tăng dần theo độ dài, để đảm bảo luôn thắng phiên bản ngắn hơn.
+?assign: logic_or
+       | postfix assign_op assign -> assign_expr
+// `?` ở RULE (chữ thường) mới có nghĩa "tự inline nếu 1 con" — terminal
+// (chữ hoa) không có ngữ nghĩa đó, nên gộp 2 terminal priority khác nhau
+// lại bằng một rule cầu nối rồi mới inline.
+?assign_op: ASSIGN_OP3 | ASSIGN_OP2
+ASSIGN_OP3.3: "<<=" | ">>="
+ASSIGN_OP2.1: "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^="
+
+?logic_or: logic_and
+         | logic_or OR_OP logic_and -> or_expr
+OR_OP.1: "||"
+?logic_and: bit_or
+          | logic_and AND_OP bit_or -> and_expr
+AND_OP.1: "&&"
+?bit_or: bit_xor
+       | bit_or "|" bit_xor -> bitor_expr
+?bit_xor: bit_and
+        | bit_xor "^" bit_and -> bitxor_expr
+?bit_and: equality
+        | bit_and "&" equality -> bitand_expr
+?equality: relational
+         | equality EQ_OP relational -> eq_expr
+EQ_OP.2: "==" | "!="
+?relational: shift
+           | relational REL_OP shift -> rel_expr
+REL_OP: "<=" | ">=" | "<" | ">"
+?shift: additive
+      | shift SHIFT_OP additive -> shift_expr
+SHIFT_OP.2: "<<" | ">>"
+?additive: multiplicative
+         | additive ADD_OP multiplicative -> add_expr
+ADD_OP: "+" | "-"
+?multiplicative: unary
+               | multiplicative MUL_OP unary -> mul_expr
+MUL_OP: "*" | "/" | "%"
+
+?unary: postfix
+      | UNARY_OP unary -> unary_expr
+UNARY_OP: "!" | "-" | "~"
+
+?postfix: NAME call_suffix -> call_expr
+        | primary
+call_suffix: "(" (expr ("," expr)*)? ")"
+
+?primary: hexint
+        | DECIMAL   -> dec_literal
+        | FLOAT     -> float_literal
+        | STRING    -> string_literal
+        | NAME      -> identifier
+        | "(" expr ")"
+
+hexint: HEXINT
+
+// ---- literal / định danh ----
+HEXINT: /0[xX][0-9a-fA-F]+/
+FLOAT: /[0-9]+\.[0-9]+/
+DECIMAL: /[0-9]+/
+STRING: /"([^"\\]|\\.)*"/
+NAME: /[A-Za-z_][A-Za-z0-9_]*/
+
+// ---- chú thích / khoảng trắng ----
+LINE_COMMENT: /\/\/[^\n]*/
+BLOCK_COMMENT: /\/\*[\s\S]*?\*\//
+%ignore LINE_COMMENT
+%ignore BLOCK_COMMENT
+%ignore /[ \t\r\n]+/

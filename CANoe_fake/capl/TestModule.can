@@ -1,0 +1,92 @@
+/*@!Encoding:65001*/
+/* ------------------------------------------------------------------
+ * TestModule.can — a Test Feature Set example.
+ * The Test window of CANoe Fake scans this file, finds every `testcase`,
+ * and builds the matching Test Module tree.
+ * ------------------------------------------------------------------ */
+
+variables
+{
+  const long kTimeoutMs = 2000;
+
+  long gCheckedFrames = 0;
+}
+
+/* ---------------- TC_001: EngineData frame appears on schedule --------- */
+testcase TC_001_EngineDataCycle()
+{
+  TestCaseTitle("TC_001", "EngineData must appear within 2 seconds");
+  TestStep("1", "Wait for the first EngineData frame");
+
+  if (TestWaitForMessage(EngineData, kTimeoutMs) == 1)
+  {
+    gCheckedFrames++;
+    TestStepPass("2", "Received EngineData on time");
+  }
+  else
+  {
+    TestStepFail("2", "Timeout: EngineData was not received");
+  }
+
+  TestStep("3", "Check the repeat cycle");
+  if (TestWaitForMessage(EngineData, 200) == 1)
+    TestStepPass("4", "Cycle time is within the 200 ms limit");
+  else
+    TestStepWarning("4", "Cycle time exceeded 200 ms");
+}
+
+/* ---------------- TC_002: engine speed stays within valid range ------- */
+testcase TC_002_EngineSpeedRange()
+{
+  TestCaseTitle("TC_002", "EngineSpeed must stay within 0..8000 rpm");
+  TestStep("1", "Sample the signal value");
+
+  if (TestWaitForSignalInRange(EngineData::EngineSpeed, 0, 8000, kTimeoutMs) == 1)
+    TestStepPass("2", "Signal value is valid");
+  else
+    TestStepFail("2", "EngineSpeed exceeded the allowed range");
+}
+
+/* ---------------- TC_003: diagnostic session can be opened ------------ */
+testcase TC_003_DiagSessionOpens()
+{
+  diagRequest Body.DiagnosticSessionControl_Extended req;
+
+  TestCaseTitle("TC_003", "Open the extended diagnostic session on the Body ECU");
+  TestStep("1", "Send DiagnosticSessionControl 0x10 0x03");
+  diagSendRequest(req);
+
+  TestStep("2", "Wait for a positive response");
+  if (TestWaitForTimeout(200) == 1)
+    TestStepPass("3", "ECU responded with 0x50 0x03");
+  else
+    TestStepFail("3", "No response received");
+}
+
+/* ---------------- TC_004: ABS reacts to hard braking ------------------ */
+testcase TC_004_AbsReactsToBraking()
+{
+  TestCaseTitle("TC_004", "ABSActive flag turns on when braking hard");
+  TestStep("1", "Set Vehicle::Speed = 90 km/h");
+  @sysvar::Vehicle::Speed = 90;
+
+  TestStep("2", "Trigger hard braking");
+  if (TestWaitForTimeout(300) == 1)
+    TestStepPass("3", "ABSActive switched to 1");
+  else
+    TestStepFail("3", "ABSActive did not react");
+}
+
+/* ---------------- Test module entry point ---------------------------- */
+void MainTest()
+{
+  TestModuleTitle("Powertrain network + Body diagnostics test");
+  TestModuleDescription("Sample test suite for CANoe Fake — Phase 1.");
+
+  TC_001_EngineDataCycle();
+  TC_002_EngineSpeedRange();
+  TC_003_DiagSessionOpens();
+  TC_004_AbsReactsToBraking();
+
+  TestReportAddMiscInfo("Frames checked", "see the gCheckedFrames variable");
+}

@@ -1,0 +1,109 @@
+/*@!Encoding:65001*/
+/* ------------------------------------------------------------------
+ * Tester.can — UDS diagnostic tester node on CAN 2 (Comfort).
+ * Demonstrates diagRequest / diagResponse, ISO-TP, and negative response handling.
+ * ------------------------------------------------------------------ */
+
+variables
+{
+  msTimer  tTesterPresent;
+
+  diagRequest Body.DiagnosticSessionControl_Extended reqSession;
+  diagRequest Body.ReadDataByIdentifier_VIN          reqVin;
+  diagRequest Body.ReadDTCInformation                reqDtc;
+
+  const int kTesterPresentMs = 2000;
+
+  byte gSessionActive = 0;
+  long gRequestCount  = 0;
+}
+
+on start
+{
+  write("Tester: ready. Press 's' to open a session, 'v' to read VIN, 'd' to read DTCs.");
+}
+
+on key 's'
+{
+  gRequestCount++;
+  diagSendRequest(reqSession);
+  write("Tester: sending DiagnosticSessionControl (extended)");
+}
+
+on key 'v'
+{
+  gRequestCount++;
+  diagSendRequest(reqVin);
+  write("Tester: sending ReadDataByIdentifier 0xF190 (VIN)");
+}
+
+on key 'd'
+{
+  gRequestCount++;
+  diagSendRequest(reqDtc);
+  write("Tester: sending ReadDTCInformation");
+}
+
+on diagResponse Body.DiagnosticSessionControl_Extended
+{
+  if (diagIsNegativeResponse(this))
+  {
+    write("Tester: session switch FAILED, NRC = 0x%02X", diagGetResponseCode(this));
+    return;
+  }
+  gSessionActive = 1;
+  write("Tester: extended session opened, starting TesterPresent.");
+  setTimer(tTesterPresent, kTesterPresentMs);
+}
+
+on diagResponse Body.ReadDataByIdentifier_VIN
+{
+  byte payload[64];
+  char vin[32];
+  long length;
+  long i;
+
+  length = diagGetPrimitiveData(this, payload, elCount(payload));
+  if (length <= 3)
+  {
+    write("Tester: VIN response too short (%d byte(s))", length);
+    return;
+  }
+
+  // strip the first 3 bytes: 0x62 + DID (2 bytes)
+  for (i = 3; i < length && (i - 3) < elCount(vin) - 1; i++)
+    vin[i - 3] = payload[i];
+  vin[length - 3] = 0;
+
+  write("Tester: VIN = %s", vin);
+}
+
+on diagResponse Body.ReadDTCInformation
+{
+  long count;
+
+  count = (diagGetPrimitiveSize(this) - 3) / 4;
+  write("Tester: read %d DTC(s).", count);
+}
+
+/* Catches every other response so no negative response is missed. */
+on diagResponse *
+{
+  if (diagIsNegativeResponse(this))
+    write("Tester: negative response, NRC = 0x%02X", diagGetResponseCode(this));
+}
+
+on timer tTesterPresent
+{
+  if (gSessionActive == 0)
+    return;
+  diagStartTesterPresent("Body");
+  setTimer(tTesterPresent, kTesterPresentMs);
+}
+
+on stopMeasurement
+{
+  cancelTimer(tTesterPresent);
+  diagStopTesterPresent("Body");
+  write("Tester: sent %d request(s).", gRequestCount);
+}

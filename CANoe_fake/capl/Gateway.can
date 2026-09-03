@@ -1,0 +1,119 @@
+/*@!Encoding:65001*/
+/* ------------------------------------------------------------------
+ * Gateway.can — forwards traffic between Powertrain (CAN 1) and Comfort (CAN 2).
+ * Demonstrates: struct, enum, switch, arrays, and system variable updates.
+ * ------------------------------------------------------------------ */
+
+includes
+{
+  #include "Helpers.cin"
+}
+
+variables
+{
+  msTimer tGear;
+
+  message 0x3FC msgGearBox;
+
+  struct RoutingEntry
+  {
+    dword sourceId;
+    dword targetId;
+    byte  enabled;
+  };
+
+  enum GearPosition
+  {
+    kGearP = 0,
+    kGearR = 1,
+    kGearN = 2,
+    kGearD = 3,
+    kGearS = 4
+  };
+
+  const int kGearCycleMs = 200;
+
+  double gVehicleSpeed = 0.0;
+  byte   gGear         = kGearP;
+  byte   gEcoMode      = 0;
+  long   gForwarded    = 0;
+}
+
+on start
+{
+  setTimer(tGear, kGearCycleMs);
+  write("Gateway: CAN1 <-> CAN2 routing enabled.");
+}
+
+on message ABSdata
+{
+  word raw;
+
+  raw = this.byte(0) + ((this.byte(1) & 0x0F) << 8);
+  gVehicleSpeed = raw * 0.1;
+
+  @sysvar::Vehicle::Speed = gVehicleSpeed;
+  gGear = SelectGear(gVehicleSpeed);
+  @sysvar::Vehicle::Gear = gGear;
+  gForwarded++;
+}
+
+on message EngineData
+{
+  double throttle;
+
+  throttle  = this.byte(3) * 0.4;
+  gEcoMode  = (throttle < 25.0) ? 1 : 0;
+}
+
+on timer tGear
+{
+  msgGearBox.byte(0) = (gGear & 0x0F) | ((gEcoMode & 0x01) << 4);
+  msgGearBox.byte(1) = gGear;
+  msgGearBox.dlc     = 4;
+  output(msgGearBox);
+  setTimer(tGear, kGearCycleMs);
+}
+
+on key 'g'
+{
+  switch (gGear)
+  {
+    case kGearP:
+      write("Gateway: currently in P (Park)");
+      break;
+
+    case kGearR:
+      write("Gateway: currently in R (Reverse)");
+      break;
+
+    case kGearN:
+      write("Gateway: currently in N (Neutral)");
+      break;
+
+    case kGearD:
+    case kGearS:
+      write("Gateway: driving forward, speed %.1f km/h", gVehicleSpeed);
+      break;
+
+    default:
+      write("Gateway: unknown gear position (%d)", gGear);
+      break;
+  }
+}
+
+on stopMeasurement
+{
+  cancelTimer(tGear);
+  write("Gateway: forwarded %d frame(s).", gForwarded);
+}
+
+/* -------------------- helper functions -------------------- */
+
+byte SelectGear(double speed)
+{
+  if (speed < 1.0)   return kGearP;
+  if (speed < 45.0)  return kGearD;
+  if (speed < 90.0)  return kGearD;
+  return kGearS;
+}

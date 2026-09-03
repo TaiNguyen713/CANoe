@@ -1,0 +1,110 @@
+/*@!Encoding:65001*/
+/* ------------------------------------------------------------------
+ * Engine.can — simulated engine node on CAN 1 (Powertrain)
+ * Sends EngineData (0x100) every 100 ms, reacts to sysvar Engine::RPM.
+ * ------------------------------------------------------------------ */
+
+includes
+{
+  #include "Helpers.cin"
+}
+
+variables
+{
+  msTimer  tCyclic;
+  msTimer  tWatchdog;
+
+  message  0x100 msgEngineData;
+
+  const int kCycleTimeMs   = 100;
+  const int kWatchdogMs    = 1000;
+
+  double   gEngineSpeed    = 800.0;   // rpm
+  double   gThrottle       = 0.0;     // %
+  byte     gEngineState    = 0;       // 0=Off 1=Cranking 2=Running 3=Fault
+  long     gTxCount        = 0;
+}
+
+/* Runs before the bus goes active — only initializes data, can't send frames yet. */
+on preStart
+{
+  gEngineSpeed = 800.0;
+  gThrottle    = 0.0;
+  gEngineState = 0;
+  gTxCount     = 0;
+}
+
+on start
+{
+  write("Engine: measurement started, cycle time %d ms", kCycleTimeMs);
+  gEngineState = 2;
+  setTimer(tCyclic, kCycleTimeMs);
+  setTimer(tWatchdog, kWatchdogMs);
+}
+
+on timer tCyclic
+{
+  UpdateEngineModel();
+  PackEngineData();
+  output(msgEngineData);
+  gTxCount++;
+  setTimer(tCyclic, kCycleTimeMs);
+}
+
+on timer tWatchdog
+{
+  write("Engine: %d frame(s) sent, RPM = %.0f", gTxCount, gEngineSpeed);
+  setTimer(tWatchdog, kWatchdogMs);
+}
+
+/* Another panel/CAPL node writes to the sysvar -> this node updates immediately. */
+on sysvar Engine::RPM
+{
+  gEngineSpeed = @sysvar::Engine::RPM;
+  PackEngineData();
+  output(msgEngineData);
+}
+
+on key 'e'
+{
+  gEngineState = (gEngineState == 2) ? 0 : 2;
+  write("Engine: switched to state %d", gEngineState);
+}
+
+on stopMeasurement
+{
+  cancelTimer(tCyclic);
+  cancelTimer(tWatchdog);
+  write("Engine: finished, %d frame(s) total.", gTxCount);
+}
+
+/* -------------------- helper functions -------------------- */
+
+void UpdateEngineModel()
+{
+  double target;
+
+  gThrottle = Clamp(gThrottle + RandomDelta(), 0.0, 100.0);
+  target    = 800.0 + gThrottle * 62.0;
+  gEngineSpeed = gEngineSpeed + (target - gEngineSpeed) * 0.2;
+  gEngineSpeed = Clamp(gEngineSpeed, 600.0, 7200.0);
+}
+
+void PackEngineData()
+{
+  word raw;
+
+  raw = (word)(gEngineSpeed * 4.0);          // factor 0.25 rpm/bit
+  msgEngineData.byte(0) = raw & 0xFF;
+  msgEngineData.byte(1) = (raw >> 8) & 0xFF;
+  msgEngineData.byte(2) = 92 + 40;           // 92 degC, offset -40
+  msgEngineData.byte(3) = (byte)(gThrottle / 0.4);
+  msgEngineData.byte(4) = gEngineState;
+  msgEngineData.byte(5) = (byte)((1.2 + gEngineSpeed / 2600.0) / 0.05);
+  msgEngineData.dlc     = 8;
+}
+
+double RandomDelta()
+{
+  return (double)(random(21) - 10) * 0.6;
+}

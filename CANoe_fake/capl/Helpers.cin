@@ -1,0 +1,68 @@
+/*@!Encoding:65001*/
+/* ------------------------------------------------------------------
+ * Helpers.cin — shared helper library used by multiple CAPL nodes.
+ * .cin files have no event handlers, only functions and constants.
+ * ------------------------------------------------------------------ */
+
+variables
+{
+  const long kCrcPoly = 0x1D;
+}
+
+double Clamp(double value, double low, double high)
+{
+  if (value < low)  return low;
+  if (value > high) return high;
+  return value;
+}
+
+long ClampLong(long value, long low, long high)
+{
+  if (value < low)  return low;
+  if (value > high) return high;
+  return value;
+}
+
+/* CRC-8 SAE J1850, used as a trailing checksum byte in the payload. */
+byte Crc8(byte data[], long length)
+{
+  byte crc;
+  long i;
+  long bit;
+
+  crc = 0xFF;
+  for (i = 0; i < length; i++)
+  {
+    crc ^= data[i];
+    for (bit = 0; bit < 8; bit++)
+    {
+      if (crc & 0x80)
+        crc = (byte)((crc << 1) ^ kCrcPoly);
+      else
+        crc = (byte)(crc << 1);
+    }
+  }
+  return crc ^ 0xFF;
+}
+
+/* Rolling 0..15 counter for an alive-counter field. */
+byte NextAliveCounter(byte current)
+{
+  return (current + 1) & 0x0F;
+}
+
+void DumpPayload(char label[], byte data[], long length)
+{
+  long i;
+  char line[128];
+  char chunk[8];
+
+  strncpy(line, label, elCount(line));
+  strncat(line, ": ", elCount(line));
+  for (i = 0; i < length; i++)
+  {
+    snprintf(chunk, elCount(chunk), "%02X ", data[i]);
+    strncat(line, chunk, elCount(line));
+  }
+  write("%s", line);
+}

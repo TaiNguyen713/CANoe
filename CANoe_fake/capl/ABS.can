@@ -1,0 +1,123 @@
+/*@!Encoding:65001*/
+/* ------------------------------------------------------------------
+ * ABS.can — simulated ABS braking system node on CAN 1.
+ * Receives EngineData to derive speed, sends ABSdata (0x1A0) every 20 ms.
+ * ------------------------------------------------------------------ */
+
+includes
+{
+  #include "Helpers.cin"
+}
+
+variables
+{
+  msTimer  tAbs;
+  message  0x1A0 msgAbsData;
+
+  const int kCycleTimeMs = 20;
+
+  double   gWheelSpeed[4];      // FL, FR, RL, RR — km/h
+  byte     gAbsActive    = 0;
+  byte     gAliveCounter = 0;
+  long     gRxEngine     = 0;
+}
+
+on start
+{
+  int i;
+  for (i = 0; i < elCount(gWheelSpeed); i++)
+    gWheelSpeed[i] = 0.0;
+
+  setTimer(tAbs, kCycleTimeMs);
+  write("ABS: ready, cycle time %d ms", kCycleTimeMs);
+}
+
+/* Reads engine speed from frame 0x100 and converts it to wheel speed. */
+on message EngineData
+{
+  word raw;
+  double rpm;
+  int i;
+
+  gRxEngine++;
+  raw = this.byte(0) + (this.byte(1) << 8);
+  rpm = raw * 0.25;
+
+  for (i = 0; i < elCount(gWheelSpeed); i++)
+    gWheelSpeed[i] = Clamp((rpm - 800.0) / 42.0, 0.0, 350.0);
+}
+
+on timer tAbs
+{
+  PackAbsData();
+  output(msgAbsData);
+  setTimer(tAbs, kCycleTimeMs);
+}
+
+on key 'b'
+{
+  gAbsActive = 1;
+  write("ABS: simulating hard braking — ABSActive = 1");
+}
+
+on busOff
+{
+  write("ABS: bus-off! Resetting the CAN controller...");
+  resetCan();
+}
+
+on errorFrame
+{
+  write("ABS: error frame on channel %d at t = %d", this.can, this.time);
+}
+
+on stopMeasurement
+{
+  cancelTimer(tAbs);
+  write("ABS: received %d EngineData frame(s).", gRxEngine);
+}
+
+/* -------------------- helper functions -------------------- */
+
+void PackAbsData()
+{
+  word raw;
+  int i;
+  int startBit;
+
+  for (i = 0; i < 4; i++)
+  {
+    raw      = (word)(gWheelSpeed[i] * 10.0) & 0x0FFF;   // 12 bit, factor 0.1
+    startBit = i * 12;
+    WriteBits12(startBit, raw);
+  }
+
+  msgAbsData.byte(6) = gAbsActive;
+  msgAbsData.byte(7) = NextAliveCounter(gAliveCounter);
+  gAliveCounter      = msgAbsData.byte(7);
+  msgAbsData.dlc     = 8;
+  gAbsActive         = 0;
+}
+
+/* Writes a 12-bit value into the payload in Intel byte order. */
+void WriteBits12(int startBit, word value)
+{
+  int byteIndex;
+  int bitOffset;
+
+  byteIndex = startBit / 8;
+  bitOffset = startBit % 8;
+
+  if (bitOffset == 0)
+  {
+    msgAbsData.byte(byteIndex)     = value & 0xFF;
+    msgAbsData.byte(byteIndex + 1) = (msgAbsData.byte(byteIndex + 1) & 0xF0)
+                                     | ((value >> 8) & 0x0F);
+  }
+  else
+  {
+    msgAbsData.byte(byteIndex)     = (msgAbsData.byte(byteIndex) & 0x0F)
+                                     | ((value & 0x0F) << 4);
+    msgAbsData.byte(byteIndex + 1) = (value >> 4) & 0xFF;
+  }
+}
