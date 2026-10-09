@@ -10,6 +10,7 @@ import time
 import can
 
 import isotp_layer
+from isotp_layer import now
 from ecu_server import EcuServer
 from tester_client import Tester, NegativeResponse, UdsError
 
@@ -134,9 +135,9 @@ def main():
     # ==================================================================
 
     step("C1. Erase memory (0x31 01 FF00) — watch the repeated 0x78")
-    t_start = time.time()
+    t_start = now()
     tst.routine(0x01, 0xFF00)
-    elapsed = time.time() - t_start
+    elapsed = now() - t_start
     print(f"       took {elapsed*1000:.0f} ms across "
           f"{tst.pending_count} pending responses")
     check(tst.pending_count > 0, "ECU sent responsePending during erase")
@@ -211,6 +212,10 @@ def main():
     tst.stop()
     ecu.stop()
     time.sleep(0.2)
+    # python-can warns 'VirtualBus was not properly shut down' otherwise, and
+    # the endpoints stay registered on the channel.
+    bus_ecu.shutdown()
+    bus_tst.shutdown()
     return 0 if FAIL == 0 else 1
 
 

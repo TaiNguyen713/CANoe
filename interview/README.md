@@ -10,11 +10,15 @@ wrapping, and session timeout.
 ## Run
 
 ```bash
-pip install python-can
+pip install python-can            # or: uv sync
 python run_flashing.py            # full flashing sequence + negative tests
 python run_flashing.py --quiet    # hide the frame trace
-python exercises.py               # exercises to extend
+python exercises.py               # all six exercises
+python exercises.py 3             # just exercise 3
 ```
+
+The PyPI distribution is `python-can`; the import name `can` belongs to an
+unrelated empty placeholder package.
 
 No hardware and no vendor licence required — `python-can`'s virtual
 interface carries the frames in process.
@@ -24,10 +28,10 @@ interface carries the frames in process.
 | File | Contents |
 |---|---|
 | `isotp_layer.py` | ISO-TP: Single/First/Consecutive/Flow Control frames, STmin, block size |
-| `ecu_server.py` | Simulated ECU: 14 UDS services, session state machine, security access |
+| `ecu_server.py` | Simulated ECU: 15 UDS services, session state machine, security access |
 | `tester_client.py` | Tester: request/response with correct P2 and P2* handling |
 | `run_flashing.py` | Full flashing sequence plus 8 negative test cases |
-| `exercises.py` | Six exercises to extend the simulation |
+| `exercises.py` | Six exercises, each asserting PASS/FAIL |
 
 ## What the flashing sequence demonstrates
 
@@ -90,7 +94,23 @@ NRC `0x36` followed by a delay penalty returning NRC `0x37`, and the unlock
 is dropped on both session change and ECU reset.
 
 **STmin.** Decoded from the Flow Control frame with both ranges: `00`–`7F`
-in milliseconds, `F1`–`F9` in units of 100 microseconds.
+in milliseconds, `F1`–`F9` in units of 100 microseconds. The receiver sets it,
+so the tester dictates how fast the ECU may send — at `0x14` a 1 MB image
+spends about 50 minutes on inter-frame delay alone.
+
+**Which timer applies where.** P2 budgets the wait until a response *starts*
+arriving. Once frames are flowing, the gap between them is N_Cr, not P2 —
+otherwise a 515-byte multi-frame response dies against a 50 ms P2 while it is
+still streaming in. Same class of mistake as accumulating P2* across `0x78`.
+
+**S3 restarts when a request finishes, not when it arrives.** A routine that
+answers `0x78` for six seconds is the tester waiting legally, not the tester
+going quiet. Restarting the timer only on arrival makes the ECU drop its own
+session — and the security unlock — in the middle of its own erase.
+
+**Interval timing uses `perf_counter`, never `time.time()`.** On Windows
+`time.time()` advances in 15.6 ms steps, which is coarser than the 50 ms P2
+this code enforces and reports a 2 ms multi-frame read as exactly 0.0 ms.
 
 ## Negative test cases included
 
@@ -119,10 +139,21 @@ units in the same message.
 
 ## Exercises
 
-1. Session timeout — prove S3 fires, then prove TesterPresent holds it off
-2. Security lockout — assert the exact NRC at each attempt
-3. Block sequence counter wrap past `0xFF`
-4. Write a deliberately broken tester that accumulates timeout, and watch it fail
-5. Measure how STmin changes transfer time, then extrapolate to a 1 MB image
-6. Implement `0x2F` InputOutputControl, including releasing control when the
-   tester goes silent
+All six are implemented and assert their expectations — `python exercises.py`
+reports 41 checks.
+
+1. **Session timeout** — S3 fires after silence, and TesterPresent every 2 s
+   holds the session open (sent with suppressPosResponse, so nothing replies)
+2. **Security lockout** — the exact NRC at each attempt: `0x35`, `0x35`,
+   `0x36`, then `0x37` for seed, key, and even a *correct* key: the lockout is
+   a time penalty, not a bad-key counter
+3. **Block sequence counter wrap** — 260 blocks confirm `FF → 00 → 01`, and a
+   skipped counter is still rejected right after the wrap
+4. **The P2\* accumulation bug** — `BrokenTester` accumulates elapsed time and
+   reports a false timeout at 5.0 s against an erase that legally takes 6.4 s;
+   the correct tester passes the same erase
+5. **STmin** — measured at `0x00`, `0x0A` and `0x14` against a 512-byte DID,
+   then extrapolated to a 1 MB image
+6. **`0x2F` InputOutputControl** — take and release control, `NRC 0x22` while
+   the vehicle is moving, and control released by the ECU itself after 3 s of
+   silence, without waiting for S3 to drop the session

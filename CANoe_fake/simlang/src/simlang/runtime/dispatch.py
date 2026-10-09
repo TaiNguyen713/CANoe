@@ -27,6 +27,9 @@ class Message:
 
 
 DataPattern = tuple[tuple[int | None, bool], ...]  # (value, is_wildcard) mỗi byte
+# QUY ƯỚC: pattern mô tả TOÀN BỘ msg.data từ byte 0 (bao gồm byte service),
+# không phải phần "thêm" sau service/pid — xem ghi chú trong grammar/simlang.lark
+# tại rule on_request. `data` có specificity cao nhất nên phải tự đủ để khớp.
 
 
 def _data_matches(pattern: DataPattern, payload: bytes) -> bool:

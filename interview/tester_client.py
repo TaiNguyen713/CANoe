@@ -54,6 +54,10 @@ class Tester:
         self.p2 = P2_DEFAULT
         self.p2_star = P2_STAR_DEFAULT
         self.pending_count = 0
+        # Per-instance so a test can allow a deliberately long erase without
+        # editing this file. The guard exists to stop an ECU that answers 0x78
+        # forever, not to cap how long a legal routine may take.
+        self.max_pending = MAX_PENDING
 
     def request(self, payload, expect_response=True):
         self.sock.send(bytes(payload))
@@ -65,7 +69,7 @@ class Tester:
         timeout = self.p2
         self.pending_count = 0
 
-        for _ in range(MAX_PENDING):
+        for _ in range(self.max_pending):
             resp = self.sock.recv(timeout=timeout)
             if resp is None:
                 raise UdsError(f"timeout waiting for response to 0x{sid:02X}")
@@ -127,6 +131,22 @@ class Tester:
 
     def transfer_exit(self):
         return self.request([0x37])
+
+    def io_control(self, did, control_parameter, state=None):
+        """0x2F InputOutputControlByIdentifier."""
+        req = [0x2F, (did >> 8) & 0xFF, did & 0xFF, control_parameter]
+        if state is not None:
+            req.append(state)
+        return self.request(req)
+
+    def set_st_min(self, st_min):
+        """Change the STmin this tester asks for in its Flow Control frames.
+
+        It governs the gap between the CONSECUTIVE FRAMES THE ECU SENDS US —
+        the receiver dictates the pace, which is what makes it a flashing-time
+        lever at all.
+        """
+        self.sock.st_min = st_min
 
     def tester_present(self, suppress=True):
         return self.request([0x3E, 0x80 if suppress else 0x00],

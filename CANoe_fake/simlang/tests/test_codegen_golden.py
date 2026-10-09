@@ -69,7 +69,9 @@ async def test_data_clause_with_wildcard_matches_and_beats_pid():
 
 
 async def test_data_clause_wildcard_matches_any_byte_value():
-    h = build_harness("on request 0x7DF service 0x22 data xx xx { output(0x01); }")
+    # `data` mô tả TOÀN BỘ payload kể cả byte service (xem ghi chú trong
+    # grammar/simlang.lark) — 0x22 lặp lại service là cố ý, không phải thừa.
+    h = build_harness("on request 0x7DF service 0x22 data 0x22 xx xx { output(0x01); }")
     assert await dispatch_message(h, 0x7DF, bytes([0x22, 0xDE, 0xAD]))
     assert h.transport.sent[0].data[1] == 0x01
 
@@ -94,14 +96,16 @@ async def test_if_else_branching():
         "on start { if (flag) write(1); else write(0); }"
     )
     printed = []
+    # write(1)/write(0) không có tham số format bổ sung -> Context.write()
+    # in thẳng giá trị nguyên gốc (int), không ép sang string.
     h.ctx.write = lambda fmt, *a: printed.append(fmt % a if a else fmt)
     await h.module.on_start(h.ctx)
-    assert printed == ["0"]
+    assert printed == [0]
 
     h.module.flag = 1
     printed.clear()
     await h.module.on_start(h.ctx)
-    assert printed == ["1"]
+    assert printed == [1]
 
 
 async def test_while_loop():
@@ -115,16 +119,14 @@ async def test_while_loop():
 
 
 async def test_for_loop():
+    # `i` không khai báo trong variables{} — vẫn hợp lệ vì nó chỉ được
+    # gán/đọc trong PHẠM VI CỤC BỘ của on_start (không cần `global`, Python
+    # tự coi là biến local của hàm). `total` mới cần `global` vì được khai
+    # báo ở variables{} và phải thấy được từ ngoài sau khi hàm chạy xong.
     h = build_harness(
         "variables { int total = 0; }"
         "on start { for (i = 0; i < 4; i = i + 1) total = total + i; }"
     )
-    # `i` không khai báo trong variables{} -> global tự tạo khi gán trong
-    # vòng for (Python cho phép gán global mới trong hàm nếu có `global i`
-    # -- nhưng codegen chỉ auto `global` cho biến ĐÃ khai báo trong
-    # variables{}; `i` ở đây không nằm trong _global_names nên sẽ raise
-    # UnboundLocalError nếu dùng ngoài phạm vi cục bộ của for. Test này cố
-    # tình dùng `total` (đã khai báo) để tránh ca đó — xem ghi chú dưới.
     await h.module.on_start(h.ctx)
     assert h.module.total == 0 + 1 + 2 + 3
 
@@ -152,6 +154,21 @@ async def test_switch_case_literal_dispatch():
 )
 async def test_every_operator_evaluates_correctly(expr, expected):
     h = build_harness(f"variables {{ int result = 0; }} on start {{ result = {expr}; }}")
+    await h.module.on_start(h.ctx)
+    assert h.module.result == expected
+
+
+@pytest.mark.parametrize(
+    # int(2.5)=2, int(3.0)=3 -> 2<<3=16, 2>>3=0, 2&3=2, 2|3=3, 2^3=1
+    "op, expected",
+    [("<<", 16), (">>", 0), ("&", 2), ("|", 3), ("^", 1)],
+)
+async def test_bitwise_ops_coerce_float_to_int_like_c(op, expected):
+    """Bug thật bắt được lúc chạy test_three_hard_cases: rpm = 800 + 1100 *
+    sin(...) làm rpm thành float, rồi `(rpm*4) >> 8` crash TypeError trong
+    Python (C/CAPL thì tự ép). Test trực tiếp bằng float 2.5/3.0 để không
+    phụ thuộc giá trị cụ thể của sin()."""
+    h = build_harness(f"variables {{ int result = 0; }} on start {{ result = 2.5 {op} 3.0; }}")
     await h.module.on_start(h.ctx)
     assert h.module.result == expected
 
@@ -231,11 +248,11 @@ async def test_elapsed_increases_over_time():
 
 
 async def test_load_static_populates_static_table():
-    h = build_harness("on start { loadStatic(str(FIXTURE)); }")
-    # loadStatic() nhận string literal trong .can -- ở đây gọi trực tiếp qua
-    # ctx thay vì generate với đường dẫn động, để test tách biệt khỏi codegen.
-    import sys
-    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+    # loadStatic() nhận string literal cố định trong .can thật (spec §5.1:
+    # `loadStatic("2008_Audi_A6.sim")`) — ở đây gọi ctx.load_static() trực
+    # tiếp với đường dẫn fixture thật, tách biệt khỏi việc codegen phải sinh
+    # đúng string literal (đã test riêng ở test_hex_decimal_float_string...).
+    h = build_harness("on start { write(1); }")
     from conftest import FIXTURES
 
     h.ctx.load_static(FIXTURES / "DTC_info.sim")

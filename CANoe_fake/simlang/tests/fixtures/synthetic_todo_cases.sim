@@ -1,0 +1,33 @@
+###########################################
+#         Auto Generated                  #
+###########################################
+<config sw> Protocol = 29
+<config sw> BAUDRATE = 500000
+<config sw> TBYTE = 3
+<config sw> TFRAME = 5
+###########################################
+#         End of config                   #
+###########################################
+SIZE_DATABASE = 6
+
+//NOTE: fixture tong hop cho test importer -- Q--, l1, ^, trung lap, dong loi
+
+INFO_DATABASE = Req>1			000007E0 08 02 10 03 00 00 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			000007E8 08 06 50 03 00 32 01 F4 00	NONE	0	0
+
+INFO_DATABASE = Req>1			Q-- 000007E0 08 02 27 03 00 00 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			000007E8 08 06 67 03 12 34 56 78 00	NONE	0	0
+
+INFO_DATABASE = Req>1			000007DF 08 02 01 0C 00 00 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			l1 000007E8 08 04 41 0C 1A F8 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			000007E8 08 04 41 0C 1B 40 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			000007E8 08 04 41 0C 1C 88 00 00 00	NONE	0	0
+
+INFO_DATABASE = Req>1			000007DF 08 02 01 0C 00 00 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			000007E8 08 04 41 0C 20 00 00 00 00	NONE	0	0
+
+INFO_DATABASE = Req>1			000007E0 08 01 22 00 00 00 00 00 00	NONE	0	0
+INFO_DATABASE = Res<1			000007E8 08 03 62 12 ^A7 00 00 00 00	NONE	0	0
+
+INFO_DATABASE = Req>1			000007DF 08 01 04	NONE
+

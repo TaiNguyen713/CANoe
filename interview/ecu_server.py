@@ -12,7 +12,7 @@ including the behaviours that trip up real test scripts:
 import time
 import threading
 
-from isotp_layer import IsoTpSocket
+from isotp_layer import IsoTpSocket, now
 
 # ---- sessions ----
 SESSION_DEFAULT     = 0x01
@@ -39,16 +39,33 @@ S3_TIMEOUT = 5.0          # session timeout, seconds
 MAX_BLOCK_LENGTH = 0x0402 # 1026 = SID + BSC + 1024 payload bytes
 ERASE_PENDING_COUNT = 4   # how many 0x78 before the erase finishes
 
+# InputOutputControl (0x2F): if the tester goes quiet while it holds control
+# of an output, the ECU takes it back on its own. Shorter than S3 on purpose —
+# an actuator left forced is a safety problem, a stale session is not.
+IO_CONTROL_TIMEOUT = 3.0
+
+# controlParameter values for 0x2F
+IOCP_RETURN_CONTROL_TO_ECU = 0x00
+IOCP_SHORT_TERM_ADJUSTMENT = 0x03
+
 
 class EcuServer:
-    def __init__(self, bus, rx_id=0x7E0, tx_id=0x7E8, trace=True):
+    def __init__(self, bus, rx_id=0x7E0, tx_id=0x7E8, trace=True,
+                 max_block_length=MAX_BLOCK_LENGTH,
+                 erase_pending_count=ERASE_PENDING_COUNT):
         self.sock = IsoTpSocket(bus, tx_id=tx_id, rx_id=rx_id,
                                 name="ECU", block_size=0, st_min=0x0A,
                                 trace=trace)
         self.running = True
 
+        # Per-instance so a test can shrink the block length (to reach the BSC
+        # wrap quickly) or stretch the erase (to push past P2*) without editing
+        # this file and without one test's change leaking into the next.
+        self.max_block_length = max_block_length
+        self.erase_pending_count = erase_pending_count
+
         self.session = SESSION_DEFAULT
-        self.last_request_time = time.time()
+        self.last_request_time = now()
 
         self.security_unlocked_level = None
         self.pending_seed = None
@@ -61,6 +78,11 @@ class EcuServer:
         self.download_size = 0
         self.memory_erased = False
 
+        # ---- InputOutputControlByIdentifier (0x2F) ----
+        self.io_control = {}            # did -> forced value currently held
+        self.io_control_time = 0.0      # last time the tester touched 0x2F
+        self.vehicle_speed = 0          # simulated; > 0 blocks taking control
+
         self.dids = {
             0xF186: bytes([SESSION_DEFAULT]),
             0xF187: b"1K0907115AA",
@@ -68,7 +90,15 @@ class EcuServer:
             0xF18C: b"SN0012345678",
             0xF190: b"KMHJ281BUNA123456",      # VIN, 17 chars
             0xF195: b"SUP_V2.10",
+            # 512 bytes: long enough that the CF gap (STmin) dominates the
+            # transfer time, which is what exercise 5 measures. The VIN at 17
+            # bytes only needs 2 consecutive frames — too short to show it.
+            0xF1A0: bytes((i * 3) & 0xFF for i in range(512)),
+            0x4101: bytes([0x00]),             # cooling fan duty, 0x2F target
         }
+
+        # DIDs that 0x2F may take control of. Anything else -> NRC 0x31.
+        self.io_capable_dids = {0x4101}
 
         self.dtcs = {
             0x123401: 0x2F,     # confirmed + pending + testFailed
@@ -86,17 +116,35 @@ class EcuServer:
 
             # S3 session timeout — falls back to Default if the tester goes quiet
             if (self.session != SESSION_DEFAULT
-                    and time.time() - self.last_request_time > S3_TIMEOUT):
+                    and now() - self.last_request_time > S3_TIMEOUT):
                 print("  ** ECU: S3 timeout, falling back to Default session")
                 self.session = SESSION_DEFAULT
                 self.dids[0xF186] = bytes([SESSION_DEFAULT])
                 self.security_unlocked_level = None
 
+            # 0x2F control is given back on its own if the tester stops talking.
+            # Checked independently of S3: control can lapse while the session
+            # is still perfectly alive.
+            if (self.io_control
+                    and now() - self.io_control_time > IO_CONTROL_TIMEOUT):
+                print("  ** ECU: tester silent, returning IO control to ECU")
+                self._release_io_control()
+
             if req is None:
                 continue
 
-            self.last_request_time = time.time()
+            self.last_request_time = now()
+            # Any request at all counts as the tester being present, so a
+            # TesterPresent ping holds IO control open exactly as it holds the
+            # session open. Only real silence releases it.
+            if self.io_control:
+                self.io_control_time = now()
             self._dispatch(req)
+            # Restart S3 when the request FINISHES, not only when it arrives.
+            # A routine that answers 0x78 for six seconds is the tester waiting
+            # legally, not the tester going quiet — without this the ECU drops
+            # its own session (and the security unlock) mid-erase.
+            self.last_request_time = now()
 
     def _dispatch(self, req):
         sid = req[0]
@@ -109,6 +157,7 @@ class EcuServer:
             0x27: self._security_access,
             0x28: self._comm_control,
             0x2E: self._write_did,
+            0x2F: self._io_control,
             0x31: self._routine_control,
             0x34: self._request_download,
             0x36: self._transfer_data,
@@ -169,6 +218,7 @@ class EcuServer:
         self.security_unlocked_level = None
         self.download_active = False
         self.memory_erased = False
+        self._release_io_control()
 
     def _tester_present(self, req):
         if self._suppress(req[1] if len(req) > 1 else 0):
@@ -202,7 +252,7 @@ class EcuServer:
             return self._nrc(0x27, NRC_INCORRECT_LENGTH)
         sub = req[1]
 
-        if time.time() < self.locked_until:
+        if now() < self.locked_until:
             return self._nrc(0x27, NRC_TIME_DELAY_NOT_EXPIRED)
 
         if sub % 2 == 1:                                  # requestSeed
@@ -220,7 +270,7 @@ class EcuServer:
         if bytes(req[2:]) != expected:
             self.failed_attempts += 1
             if self.failed_attempts >= 3:
-                self.locked_until = time.time() + 10.0
+                self.locked_until = now() + 10.0
                 self.failed_attempts = 0
                 return self._nrc(0x27, NRC_EXCEED_ATTEMPTS)
             return self._nrc(0x27, NRC_INVALID_KEY)
@@ -277,7 +327,12 @@ class EcuServer:
                 return self._nrc(0x31, NRC_SECURITY_ACCESS_DENIED)
             # This is the part that breaks naive test scripts:
             # repeated 0x78 while the erase runs.
-            for _ in range(ERASE_PENDING_COUNT):
+            for _ in range(self.erase_pending_count):
+                # Bail out if the ECU is being shut down: this loop can run for
+                # seconds, and a tester that gave up early (see the P2*
+                # exercise) will tear the bus down underneath us.
+                if not self.running:
+                    return
                 self._nrc(0x31, NRC_RESPONSE_PENDING)
                 time.sleep(0.16)
             self.memory_erased = True
@@ -313,7 +368,8 @@ class EcuServer:
         self.bytes_received = 0
         self.expected_bsc = 1
         self._positive([0x74, 0x20,
-                        (MAX_BLOCK_LENGTH >> 8) & 0xFF, MAX_BLOCK_LENGTH & 0xFF])
+                        (self.max_block_length >> 8) & 0xFF,
+                        self.max_block_length & 0xFF])
 
     def _transfer_data(self, req):
         if not self.download_active:
@@ -337,6 +393,58 @@ class EcuServer:
         self.expected_bsc = (self.expected_bsc + 1) & 0xFF
         self._positive([0x76, bsc])
 
+    def _io_control(self, req):
+        """0x2F InputOutputControlByIdentifier.
+
+        Layout: 2F <DID hi> <DID lo> <controlParameter> [controlState...]
+
+        Only the two control parameters the exercise asks for are supported:
+        0x03 shortTermAdjustment takes control and forces a value, 0x00
+        returnControlToECU hands it back.
+        """
+        if len(req) < 4:
+            return self._nrc(0x2F, NRC_INCORRECT_LENGTH)
+
+        # Forcing an actuator is a workshop activity, not something the vehicle
+        # allows in the Default session.
+        if self.session == SESSION_DEFAULT:
+            return self._nrc(0x2F, NRC_SERVICE_NOT_SUPPORTED_SESSION)
+
+        did = (req[1] << 8) | req[2]
+        if did not in self.io_capable_dids:
+            return self._nrc(0x2F, NRC_REQUEST_OUT_OF_RANGE)
+
+        param = req[3]
+
+        if param == IOCP_RETURN_CONTROL_TO_ECU:
+            self.io_control.pop(did, None)
+            if not self.io_control:
+                self.io_control_time = 0.0
+            self.dids[did] = bytes([0x00])
+            return self._positive([0x6F, req[1], req[2], param, 0x00])
+
+        if param == IOCP_SHORT_TERM_ADJUSTMENT:
+            # The precondition that matters: never let a tester drive an
+            # actuator while the vehicle is moving.
+            if self.vehicle_speed > 0:
+                return self._nrc(0x2F, NRC_CONDITIONS_NOT_CORRECT)
+            if len(req) < 5:
+                return self._nrc(0x2F, NRC_INCORRECT_LENGTH)
+            value = req[4]
+            self.io_control[did] = value
+            self.io_control_time = now()
+            self.dids[did] = bytes([value])
+            return self._positive([0x6F, req[1], req[2], param, value])
+
+        return self._nrc(0x2F, NRC_REQUEST_OUT_OF_RANGE)
+
+    def _release_io_control(self):
+        """Give every forced output back to the ECU's own control."""
+        for did in list(self.io_control):
+            self.dids[did] = bytes([0x00])
+        self.io_control.clear()
+        self.io_control_time = 0.0
+
     def _transfer_exit(self, req):
         if not self.download_active:
             return self._nrc(0x37, NRC_REQUEST_SEQUENCE_ERROR)
@@ -345,5 +453,12 @@ class EcuServer:
         self._positive([0x77])
 
     def stop(self):
+        """Stop the ECU and wait for its thread to leave the bus alone.
+
+        The join matters: without it the caller can shut the CAN bus down while
+        this thread is still inside a long routine, and the send blows up with
+        'Cannot operate on a closed bus'.
+        """
         self.running = False
+        self._thread.join(timeout=2.0)
         self.sock.stop()

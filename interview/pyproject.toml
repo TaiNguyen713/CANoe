@@ -1,14 +1,17 @@
 [project]
 name = "interview"
 version = "0.1.0"
-description = "Add your description here"
+description = "UDS (ISO 14229) client/server over virtual CAN with ISO-TP from scratch"
 readme = "README.md"
 authors = [
     { name = "Tai Nguyen", email = "tai.nguyen@vn.innova.com" }
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "can>=0.0.0",
+    # The import name is `can`, but the DISTRIBUTION on PyPI is `python-can`.
+    # Plain `can` is an unrelated empty placeholder (version 0.0.0, no
+    # `can.interface`), so depending on it makes every module here fail to run.
+    "python-can>=4.0",
 ]
 
 [project.scripts]

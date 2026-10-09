@@ -27,6 +27,7 @@ class GeneratedModule:
 
 
 _BINARY_PY_OP = {"&&": "and", "||": "or"}
+_BITWISE_OPS = {"<<", ">>", "&", "|", "^"}
 
 # builtin cần `await ctx.<method>(...)`
 _ASYNC_CTX_BUILTINS = {"output": "output", "outputRaw": "output_raw"}
@@ -297,7 +298,16 @@ class _CodeGen:
             return f"({expr.op}{self._gen_expr(expr.operand)})"
         if isinstance(expr, ast.Binary):
             py_op = _BINARY_PY_OP.get(expr.op, expr.op)
-            return f"({self._gen_expr(expr.left)} {py_op} {self._gen_expr(expr.right)})"
+            left = self._gen_expr(expr.left)
+            right = self._gen_expr(expr.right)
+            if expr.op in _BITWISE_OPS:
+                # C/CAPL tự ép float->int khi dùng toán tử bit; Python thì
+                # raise TypeError thẳng (vd `sin(...)` trả float rồi đem
+                # `>> 8` — xảy ra THẬT trong chính ví dụ §5.1 của spec, vì
+                # rpm được gán bằng biểu thức có sin()). Ép int() cả 2 vế
+                # để khớp ngữ nghĩa C, không đổi kết quả khi đã là int sẵn.
+                left, right = f"int({left})", f"int({right})"
+            return f"({left} {py_op} {right})"
         if isinstance(expr, ast.Assign):
             target = self._gen_expr(expr.target)
             value = self._gen_expr(expr.value)

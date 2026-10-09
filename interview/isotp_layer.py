@@ -16,6 +16,14 @@ PCI types:
 import time
 import threading
 
+# Every interval and deadline in this project uses perf_counter, never
+# time.time(). On Windows time.time() ticks in 15.6 ms steps — coarser than the
+# 50 ms P2 this code is supposed to enforce, and enough to measure a 3 ms
+# multi-frame read as exactly 0.0 ms. perf_counter resolves to ~100 ns.
+# It is monotonic and has no defined epoch, so it is only ever used for
+# differences, which is all any timeout here needs.
+now = time.perf_counter
+
 PADDING = 0x55
 
 _print_lock = threading.Lock()
@@ -29,6 +37,10 @@ def trace_print(text):
 FC_CONTINUE = 0x00
 FC_WAIT     = 0x01
 FC_OVERFLOW = 0x02
+
+# N_Cr: the longest gap ISO 15765-2 allows between consecutive frames of one
+# message. It is a separate budget from the UDS-layer P2 — see recv().
+N_CR = 1.0
 
 
 def st_min_to_seconds(st: int) -> float:
@@ -67,6 +79,7 @@ class IsoTpSocket:
         self._rx_buffer = bytearray()
         self._rx_expected = 0
         self._rx_seq = 0
+        self._rx_activity = 0.0     # when a frame of the in-progress message landed
 
         self._thread = threading.Thread(target=self._rx_loop, daemon=True)
         self._thread.start()
@@ -80,7 +93,7 @@ class IsoTpSocket:
         )
         self.bus.send(msg)
         if self.trace:
-            trace_print(f"  {time.time() - T0:7.3f}  {self.tx_id:03X}  "
+            trace_print(f"  {now() - T0:7.3f}  {self.tx_id:03X}  "
                         f"{' '.join(f'{b:02X}' for b in payload)}"
                         f"   [{self.name}]")
 
@@ -104,6 +117,7 @@ class IsoTpSocket:
             self._rx_expected = ((data[0] & 0x0F) << 8) | data[1]
             self._rx_buffer = bytearray(data[2:8])
             self._rx_seq = 1
+            self._rx_activity = now()
             # answer with Flow Control
             self._send_frame([0x30 | FC_CONTINUE, self.block_size, self.st_min])
 
@@ -116,6 +130,7 @@ class IsoTpSocket:
                 self._rx_expected = 0
                 return
             self._rx_seq += 1
+            self._rx_activity = now()
             self._rx_buffer += data[1:8]
             if len(self._rx_buffer) >= self._rx_expected:
                 self._deliver(bytes(self._rx_buffer[:self._rx_expected]))
@@ -132,14 +147,27 @@ class IsoTpSocket:
             self._rx_lock.notify_all()
 
     def recv(self, timeout=1.0):
-        """Return one complete UDS payload, or None on timeout."""
-        deadline = time.time() + timeout
+        """Return one complete UDS payload, or None on timeout.
+
+        `timeout` budgets the wait until the message STARTS arriving — that is
+        the P2 the UDS layer cares about. Once frames are flowing, the gap
+        between them is governed by N_Cr instead, so a long multi-frame
+        response is not killed by a 50 ms P2 while it is still streaming in.
+        Applying P2 to full reassembly is the same class of mistake as
+        accumulating it across 0x78 responses: the timer is being measured at
+        the wrong boundary.
+        """
+        deadline = now() + timeout
         with self._rx_lock:
             while not self._rx_queue:
-                remaining = deadline - time.time()
+                if self._rx_expected and self._rx_activity:
+                    deadline = max(deadline, self._rx_activity + N_CR)
+                remaining = deadline - now()
                 if remaining <= 0:
                     return None
-                self._rx_lock.wait(remaining)
+                # Capped so the extension above is re-evaluated as frames land;
+                # _deliver() notifies, but a mid-message frame does not.
+                self._rx_lock.wait(min(remaining, 0.05))
             return self._rx_queue.pop(0)
 
     # ---------- transmit side ----------
@@ -190,12 +218,18 @@ class IsoTpSocket:
         return True
 
     def stop(self):
+        """Stop the receive loop and wait for it to exit.
+
+        The caller usually shuts the bus down straight after, and a thread
+        still sitting in bus.recv() would raise on a closed bus.
+        """
         self._running = False
+        self._thread.join(timeout=1.0)
 
 
-T0 = time.time()
+T0 = now()
 
 
 def reset_trace_clock():
     global T0
-    T0 = time.time()
+    T0 = now()
